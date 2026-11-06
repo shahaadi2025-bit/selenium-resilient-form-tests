@@ -1,0 +1,17 @@
+name: build-and-run-fixtures
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: ResilientFormTests } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "8.0.x" }
+      - run: dotnet build -c Release
+      - name: Original layout
+        run: dotnet run -c Release --no-build -- --url ../fixtures/original.html --headless
+      - name: Reordered / renamed / decoy fields
+        run: dotnet run -c Release --no-build -- --url ../fixtures/mutated-1-reordered-renamed.html --headless
+      - name: Table layout, placeholder-only, shadow DOM
+        run: dotnet run -c Release --no-build -- --url ../fixtures/mutated-2-structure-placeholder-shadow.html --headless
