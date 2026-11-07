@@ -58,6 +58,10 @@ Each action is **verified**, not just performed: the typed value is read back, e
 
 When inspecting the CloudQA page I noticed the dropdown under the **State** label lists *countries* (India, Canada, …). The program therefore identifies the State field by its label, not by its options, and by default picks the first real option. Pass `--state <text>` to pick a specific one.
 
+## Reliability
+
+The program waits for the page to finish loading, reloads once if the first field is not found, and if Chrome itself closes or crashes mid-run (reported as `invalid session id`) it starts a fresh browser and retries once instead of reporting field failures. Chrome's background updater is disabled for the run.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` builds the project and runs it headless against the three fixtures on every push, so the badge on the repo shows it works.

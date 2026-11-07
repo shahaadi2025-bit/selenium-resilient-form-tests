@@ -201,16 +201,39 @@ public sealed class FormTester
 
 public static class Program
 {
+    private static bool IsCrash(string text) =>
+        text != null && (text.Contains("invalid session id") || text.Contains("chrome not reachable") ||
+                         text.Contains("disconnected") || text.Contains("no such window") ||
+                         text.Contains("session deleted") || text.Contains("target window already closed"));
+
     public static int Main(string[] args)
     {
         Config cfg;
         try { cfg = Config.Parse(args); }
         catch (Exception e) { Console.Error.WriteLine(e.Message); Config.Usage(); return 2; }
 
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            int code = RunOnce(cfg, out bool crashed);
+            if (!crashed) return code;
+            Console.WriteLine("Chrome closed or crashed during the run (not a problem with the page)." +
+                              (attempt == 1 ? " Retrying once with a fresh browser..." : ""));
+        }
+        return 2;
+    }
+
+    private static int RunOnce(Config cfg, out bool crashed)
+    {
+        crashed = false;
         var options = new ChromeOptions();
         if (cfg.Headless) options.AddArgument("--headless=new");
         options.AddArgument("--window-size=1400,1000");
         options.AddArgument("--disable-notifications");
+        options.AddArgument("--no-first-run");
+        options.AddArgument("--no-default-browser-check");
+        options.AddArgument("--disable-background-networking");   // keeps Chrome's updater out of the test run
+        options.AddArgument("--disable-component-update");
+        options.AddArgument("--disable-default-apps");
 
         IWebDriver driver;
         try { driver = new ChromeDriver(options); }   // Selenium Manager fetches the matching driver
@@ -222,11 +245,23 @@ public static class Program
             Console.WriteLine("Testing: " + cfg.Url);
             driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(60);   // never hang on a dead page
             driver.Navigate().GoToUrl(cfg.Url);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            while (clock.Elapsed < TimeSpan.FromSeconds(20) &&
+                   (string)((IJavaScriptExecutor)driver).ExecuteScript("return document.readyState") != "complete")
+                Thread.Sleep(250);
+
             var finder = new FieldFinder(driver, TimeSpan.FromSeconds(cfg.TimeoutSeconds));
             var tester = new FormTester(driver, finder, cfg);
 
             Console.WriteLine("[1/3] First Name");
-            results.Add(tester.TestFirstName());
+            var first = tester.TestFirstName();
+            if (!first.Passed && first.Detail.Contains("Could not confidently locate") && !IsCrash(first.Detail))
+            {
+                Console.WriteLine("  not found - reloading the page once and trying again");
+                driver.Navigate().Refresh();
+                first = tester.TestFirstName();
+            }
+            results.Add(first);
             Console.WriteLine("[2/3] Gender");
             results.Add(tester.TestGender());
             Console.WriteLine("[3/3] State");
@@ -234,7 +269,7 @@ public static class Program
 
             foreach (var w in finder.Warnings) Console.WriteLine("WARNING: " + w);
 
-            if (results.Any(r => !r.Passed))
+            if (results.Any(r => !r.Passed) && !results.Any(r => IsCrash(r.Detail)))
             {
                 try
                 {
@@ -248,12 +283,15 @@ public static class Program
         catch (WebDriverException e)
         {
             Console.Error.WriteLine("Browser error: " + e.Message);
+            crashed = IsCrash(e.Message);
             return 2;
         }
         finally
         {
-            driver.Quit();
+            try { driver.Quit(); } catch (Exception) { }
         }
+
+        if (results.Any(r => !r.Passed && IsCrash(r.Detail))) { crashed = true; return 2; }
 
         Console.WriteLine();
         Console.WriteLine("==== RESULTS ====");
