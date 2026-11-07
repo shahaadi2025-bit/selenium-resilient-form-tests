@@ -82,7 +82,12 @@ public sealed class FieldFinder
                     if (s > bestScore) { bestScore = s; bestGroup = g; }
                 }
                 _diag = "Gender: " + string.Join(" ; ", diag);
-                if (bestGroup != null && bestScore >= 12) return bestGroup;
+                if (bestGroup != null && bestScore >= 12)
+                {
+                    // some pages repeat a radio set that is hidden: only use the visible options if there are enough
+                    var visible = bestGroup.Where(r => r.Visible).ToList();
+                    return visible.Count >= 2 ? visible : bestGroup;
+                }
             }
             return null;
         });
@@ -282,7 +287,7 @@ internal static class Scorer
             s += extra <= 0 ? 4 : -Math.Min(extra, 4);
         }
         if (HasAny(ph, phrases)) s += 9;
-        if (HasAny(before, phrases)) s += 5;                // plain text/label sibling right before the input
+        if (HasAny(before, phrases)) s += Tokens(before).Length <= 3 ? 8 : 5;   // short label-like text right before the input
         if (HasAny(nearest, phrases)) s += Tokens(nearest).Length <= 3 ? 4 : 2;
 
         var at = Tokens(Norm(c.Id + " " + c.Name + " " + c.Cls));   // weak signal only
@@ -343,7 +348,7 @@ internal static class Scorer
         var lt = Tokens(label);
         if (lt.Contains("state")) s += 10;
         else if (lt.Contains("province") || lt.Contains("region")) s += 5;
-        if (Tokens(before).Contains("state")) s += 6;
+        if (Tokens(before).Contains("state")) s += Tokens(before).Length <= 3 ? 9 : 6;   // short label-like text right before the control
         if (Tokens(nearest).Contains("state") && Tokens(nearest).Length <= 3) s += 4;
 
         var at = Tokens(Norm(c.Id + " " + c.Name + " " + c.Cls));
